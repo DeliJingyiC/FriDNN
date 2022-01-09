@@ -3,13 +3,19 @@ from keras.layers import (Activation, Add, BatchNormalization, Concatenate,
                           Input, Lambda, MaxPooling1D, Softmax)
 from keras import regularizers
 from keras.models import Model
+from lists import fricative_dict
+
 
 def FriDNN(input_size):
 
     reg_input = Input(shape=(input_size, 1))
 
-    conv1 = Conv1D(48, 32, strides=6, padding='same', kernel_regularizer=regularizers.l2(0.0001), name='conv1_1')(
-        reg_input)
+    conv1 = Conv1D(48,
+                   32,
+                   strides=6,
+                   padding='same',
+                   kernel_regularizer=regularizers.l2(0.0001),
+                   name='conv1_1')(reg_input)
     bn1 = BatchNormalization()(conv1)
     act1 = Activation('relu')(bn1)
 
@@ -17,19 +23,28 @@ def FriDNN(input_size):
 
     global_avg = GlobalAveragePooling1D()(stage2)
 
-    final_output = Dense(3, activation='softmax')(global_avg)
+    final_output = Dense(len(fricative_dict) + 1,
+                         activation='softmax')(global_avg)
 
     return Model(inputs=reg_input, outputs=final_output)
 
 
-def stage_layer_with_shortcuts_pad(input_layer, dimension, stride_factor, stage_num):
+def stage_layer_with_shortcuts_pad(input_layer, dimension, stride_factor,
+                                   stage_num):
 
-    conv2 = Conv1D(dimension, 8, strides=stride_factor, padding='same', kernel_regularizer=regularizers.l2(0.0001),
+    conv2 = Conv1D(dimension,
+                   8,
+                   strides=stride_factor,
+                   padding='same',
+                   kernel_regularizer=regularizers.l2(0.0001),
                    name='conv{}_1'.format(stage_num))(input_layer)
     bn2 = BatchNormalization()(conv2)
     act2 = Activation('relu')(bn2)
 
-    conv3 = Conv1D(dimension, 8, padding='same', kernel_regularizer=regularizers.l2(0.0001),
+    conv3 = Conv1D(dimension,
+                   8,
+                   padding='same',
+                   kernel_regularizer=regularizers.l2(0.0001),
                    name='conv{}_2'.format(stage_num))(act2)
     bn3 = BatchNormalization()(conv3)
 
@@ -49,22 +64,34 @@ def stage_layer_with_shortcuts_pad(input_layer, dimension, stride_factor, stage_
 
     act3 = Activation('relu')(Add()([bn3, input_layer]))
 
-    conv4 = Conv1D(dimension, 8, padding='same', kernel_regularizer=regularizers.l2(0.0001),
+    conv4 = Conv1D(dimension,
+                   8,
+                   padding='same',
+                   kernel_regularizer=regularizers.l2(0.0001),
                    name='conv{}_3'.format(stage_num))(act3)
     bn4 = BatchNormalization()(conv4)
     act4 = Activation('relu')(bn4)
 
-    conv5 = Conv1D(dimension, 8, padding='same', kernel_regularizer=regularizers.l2(0.0001),
+    conv5 = Conv1D(dimension,
+                   8,
+                   padding='same',
+                   kernel_regularizer=regularizers.l2(0.0001),
                    name='conv{}_4'.format(stage_num))(act4)
     bn5 = BatchNormalization()(conv5)
     act5 = Activation('relu')(Add()([bn5, act3]))
 
-    conv6 = Conv1D(dimension, 8, padding='same', kernel_regularizer=regularizers.l2(0.0001),
+    conv6 = Conv1D(dimension,
+                   8,
+                   padding='same',
+                   kernel_regularizer=regularizers.l2(0.0001),
                    name='conv{}_5'.format(stage_num))(act5)
     bn6 = BatchNormalization()(conv6)
     act6 = Activation('relu')(bn6)
 
-    conv7 = Conv1D(dimension, 8, padding='same', kernel_regularizer=regularizers.l2(0.0001),
+    conv7 = Conv1D(dimension,
+                   8,
+                   padding='same',
+                   kernel_regularizer=regularizers.l2(0.0001),
                    name='conv{}_6'.format(stage_num))(act6)
     bn7 = BatchNormalization()(conv7)
     act7 = Activation('relu')(Add()([bn7, act5]))

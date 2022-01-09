@@ -1,11 +1,22 @@
 import os
 
-# fricative_list contains the phonetic codes for all 8 fricatives
-fricative_list = ['s', 'sh', 'f', 'th', 'z', 'zh', 'v', 'dh']
 # fricative_list contains the phonetic codes for only unvoiced fricatives
 unvoiced_fricative_list = ['s', 'sh', 'f', 'th']
 # fricative_list contains the phonetic codes for only voiced fricatives
 voiced_fricative_list = ['z', 'zh', 'v', 'dh']
+# fricative_list contains the phonetic codes for all 8 fricatives
+fricative_list = unvoiced_fricative_list + voiced_fricative_list
+
+fricative_dict = {
+    's': 0,
+    'sh': 1,
+    'f': 2,
+    'th': 3,
+    'z': 4,
+    'zh': 5,
+    'v': 6,
+    'dh': 7,
+}
 # phonemes considered as silence
 silence_list = ['h#', 'epi', 'pau', 'bcl', 'dcl', 'gcl', 'pcl', 'tcl', 'kcl']
 

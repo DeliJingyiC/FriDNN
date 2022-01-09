@@ -71,7 +71,7 @@ def train_and_test_model(path_to_TIMIT, pre_delay, model_dir, output_dir,
 
     if not only_test:
 
-        model_dir.mkdir(parents=True, exist_ok=False)
+        model_dir.mkdir(parents=True, exist_ok=True)
 
         # Network Creation
         name = f"{model_dir.name}-{pre_delay}-{datetime.datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}"
@@ -88,9 +88,9 @@ def train_and_test_model(path_to_TIMIT, pre_delay, model_dir, output_dir,
             with redirect_stdout(f):
                 model.summary()
         log_dir = model_dir / 'logs'
-        train_dir.mkdir(parents=True, exist_ok=False)
+        log_dir.mkdir(parents=True, exist_ok=True)
 
-        tensorboard = TensorBoard(log_dir=train_dir)
+        tensorboard = TensorBoard(log_dir=log_dir)
         es = EarlyStopping(monitor='val_loss',
                            min_delta=0,
                            mode='min',
@@ -105,15 +105,17 @@ def train_and_test_model(path_to_TIMIT, pre_delay, model_dir, output_dir,
                                cooldown=0,
                                min_lr=0)
 
-        filepath = ck_dir / "{name}_epoch_{epoch:02d}_valloss_{val_loss:.3f}.hdf5"
+        filepath = ck_dir / "model_epoch_{epoch:02d}_valloss_{val_loss:.3f}.hdf5"
 
-        mc1 = ModelCheckpoint(str(filepath),
-                              monitor='val_loss',
-                              verbose=1,
-                              save_best_only=True,
-                              save_weights_only=False,
-                              mode='auto',
-                              period=1)
+        mc1 = ModelCheckpoint(
+            str(filepath),
+            monitor='val_loss',
+            verbose=1,
+            save_best_only=True,
+            save_weights_only=False,
+            mode='auto',
+            period=1,
+        )
 
         # Initialization of data generators for training and validation
         train_gen = DataGenerator(train_audio_list, BATCH_SIZE,
@@ -124,16 +126,18 @@ def train_and_test_model(path_to_TIMIT, pre_delay, model_dir, output_dir,
                                 NUMBER_OF_AUDIOS, WINDOW_SIZE, pre_delay,
                                 'validation')
 
-        hist = model.fit_generator(train_gen,
-                                   epochs=EPOCHS,
-                                   verbose=1,
-                                   callbacks=[tensorboard, es, mc1, lr],
-                                   validation_data=val_gen,
-                                   max_queue_size=4,
-                                   workers=1,
-                                   use_multiprocessing=False,
-                                   shuffle=False,
-                                   initial_epoch=0)
+        hist = model.fit_generator(
+            train_gen,
+            epochs=EPOCHS,
+            verbose=1,
+            callbacks=[tensorboard, es, mc1, lr],
+            validation_data=val_gen,
+            max_queue_size=4,
+            workers=1,
+            use_multiprocessing=False,
+            shuffle=False,
+            initial_epoch=0,
+        )
 
     different_epoch_paths = ck_dir.iterdir()
     if not only_test:

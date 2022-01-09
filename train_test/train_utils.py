@@ -8,7 +8,7 @@ import numpy as np
 from keras.models import load_model
 from soundfile import read
 
-from lists import fricative_list, silence_list, unvoiced_fricative_list, voiced_fricative_list
+from lists import fricative_list, silence_list, unvoiced_fricative_list, voiced_fricative_list, fricative_dict
 
 
 def windowing(audio, label, ws, flag, delay):
@@ -33,22 +33,17 @@ def windowing(audio, label, ws, flag, delay):
         0 for non-fricative sample
 
     """
-    if flag == 1:  # fricative sample generation
-        try:  # some utterances in the TIMIT dataset do not have fricative phoneme at all. To avoid this issue,
-            # this error handling is applied
-            label_point = np.random.choice(
-                np.where(
-                    label[ws - 1 - delay:len(audio) -
-                          np.max([0, delay])] == flag)[0]) + ws - 1 - delay
-        except ValueError:  # some of the utterances does not have a single fricative
-            label_point = np.random.randint(ws - 1 - delay,
-                                            len(audio) - np.max([0, delay]))
-    else:  # non-fricative sample generation
+    dist_to_boundary = ws - 1 - delay
+    try:  # some utterances in the TIMIT dataset do not have fricative phoneme at all. To avoid this issue,
+        # this error handling is applied
         label_point = np.random.choice(
-            np.where(label[ws - 1 - delay:len(audio) -
-                           np.max([0, delay])] == flag)[0]) + ws - 1 - delay
+            np.where(label[dist_to_boundary:len(audio) -
+                           np.max([0, delay])] == flag)[0]) + dist_to_boundary
+    except ValueError:  # some of the utterances does not have a single fricative
+        label_point = np.random.randint(dist_to_boundary,
+                                        len(audio) - np.max([0, delay]))
 
-    sample = audio[label_point - ws + 1 + delay:label_point + 1 + delay]
+    sample = audio[label_point - dist_to_boundary:label_point + 1 + delay]
 
     sample_label = label[label_point]
 
@@ -67,21 +62,27 @@ def binary_label(data_phn, data):
             corresponding wav file of the utterance (data) and indicates the label for each sample in the utterance. It
             contains 0's (non-fricative) and 1's (for fricative)
     """
-    data_phn[0][
-        0] = 0  # some silence parts do not start at 0 index in the TIMIT dataset
-    data_phn[-1][1] = len(
-        data)  # in some phn files, end index of the last phoneme does not
-    # have the same length with the corresponding utterance
-    label_array = np.zeros(len(data))
-
+    data_phn[0][0] = 0
+    # some silence parts do not start at 0 index in the TIMIT dataset
+    data_phn[-1][1] = len(data)
+    # in some phn files, end index of the last phoneme does not have the same length with the corresponding utterance
+    label_array = np.zeros((len(data)))
+    NULL_INDEX = len(fricative_dict)
     for phoneme in data_phn:
-
-        if phoneme[2] in fricative_list:
-            label_array[int(phoneme[0]):int(phoneme[1])] = 1
-        elif phoneme[2] in silence_list:
-            label_array[int(phoneme[0]):int(phoneme[1])] = 2
+        if phoneme[2] in fricative_dict:
+            label_array[int(phoneme[0]):int(phoneme[1])] = fricative_dict[
+                phoneme[2]]
         else:
-            label_array[int(phoneme[0]):int(phoneme[1])] = 0
+            label_array[int(phoneme[0]):int(phoneme[1])] = NULL_INDEX
+    """
+    print(f"data {data.shape}")
+    print(f"data[0] {data[0]}")
+
+    print(f"label_array {label_array.shape}")
+    print(f"label_array[0] {label_array.shape}")
+
+    input()
+    """
 
     return label_array
 
@@ -133,8 +134,10 @@ class DataGenerator(keras.utils.Sequence):
         self.indexes = np.arange(len(self.list_paths))
         # sample lengths that is samples from utterances in the TIMIT dataset
         self.window_size = window_size
-        self.delay = delay  # delay in the detection
-        self.shuffle = shuffle  # decides if the list that contains relative
+        self.delay = delay
+        # delay in the detection
+        self.shuffle = shuffle
+        # decides if the list that contains relative
         # paths of utterance should be shuffled after one epoch
         # decides where to use the generator, for training or validation
         self.use_case = use_case
@@ -170,7 +173,6 @@ class DataGenerator(keras.utils.Sequence):
     def __data_generation(self, list_paths_batch):
         """Generates data containing batch_size samples"""
 
-        count = 0
         # Load data
         raw_samples = []
         raw_labels = []
@@ -180,23 +182,26 @@ class DataGenerator(keras.utils.Sequence):
             raw_samples.append(temp_sample)
             temp_label = binary_label(
                 np.genfromtxt(
-                    temp_path[:-4] + '.PHN',
+                    str(temp_path)[:-4] + '.PHN',
                     dtype=[('myint', 'i4'), ('myint2', 'i4'),
                            ('mystring', 'U25')],
                     comments='*',
-                ), )
+                ),
+                temp_sample,
+            )
             raw_labels.append(temp_label)
-
+        total_categories = len(fricative_dict) + 1
         # Initialization
         x = np.zeros((len(list_paths_batch) * self.nos, self.window_size))
 
-        y = np.zeros((len(list_paths_batch) * self.nos, 3))
+        y = np.zeros((len(list_paths_batch) * self.nos, total_categories))
 
         # Create Samples and Labels from loaded raw samples and raw labels
+        count = 0
 
         for _ in range(self.nos):
 
-            desired_label = self.flag % 3
+            desired_label = self.flag % total_categories
             for k in range(len(list_paths_batch)):
                 single_temp_sample, single_temp_label = windowing(
                     raw_samples[k],

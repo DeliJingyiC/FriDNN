@@ -7,7 +7,7 @@ from soundfile import read
 from train_utils import phoneme_level_label
 from keras.models import load_model
 
-from lists import fricative_list, silence_list, unvoiced_fricative_list, voiced_fricative_list
+from lists import fricative_list, silence_list, unvoiced_fricative_list, voiced_fricative_list, fricative_dict
 
 
 def calculate_performance(experiment_folder, prediction, ground_truth):
@@ -20,25 +20,29 @@ def calculate_performance(experiment_folder, prediction, ground_truth):
     print(f"ground_truth {ground_truth}")
     print(f"prediction {prediction}")
 
-    ground_truth_binary = np.isin(ground_truth, fricative_list).astype(int)
+    for key, val in fricative_dict.items():
+        ground_truth[ground_truth == key] = val
 
-    print(f"ground_truth_binary {ground_truth_binary}")
+    #ground_truth_binary = np.isin(ground_truth, fricative_list).astype(int)
+
+    #print(f"ground_truth_binary {ground_truth_binary}")
     total_prediction_binary = np.argmax(prediction, axis=1)
-    total_prediction_binary_ = total_prediction_binary == 1
+    #total_prediction_binary_ = total_prediction_binary == 1
     print(f"total_prediction_binary {total_prediction_binary}")
     print(f"total_prediction_binary_ {total_prediction_binary_}")
 
     with open(experiment_folder / 'performance.txt', 'w') as f:
         f.writelines(
             classification_report(
-                ground_truth_binary,
-                total_prediction_binary_,
+                total_prediction_binary,
+                ground_truth,
                 target_names=['non-fricative', 'fricative'],
                 digits=4,
             ))
 
-    calculate_performance_to_compare_state_of_the_art(
-        experiment_folder, ground_truth, total_prediction_binary_)
+    calculate_performance_to_compare_state_of_the_art(experiment_folder,
+                                                      ground_truth,
+                                                      total_prediction_binary)
 
 
 def calculate_performance_to_compare_state_of_the_art(
@@ -212,7 +216,7 @@ def prediction_whole_core_test(output_dir,
     print(model_path)
     model = load_model(model_path)
 
-    prediction = np.array([]).reshape(0, 3)
+    predictions = np.array([]).reshape(0, 3)
     phoneme_ground_truth = np.array([])
 
     # Testing for each utterance in the Core Test Set
@@ -222,21 +226,23 @@ def prediction_whole_core_test(output_dir,
 
         print('evaluating {} for utterance {}'.format(model_path, i + 1))
 
-        temp = prediction_one_utterance(model, utterance, window_size, delay)
+        prediction, phoneme_ground_truth = prediction_one_utterance(
+            model, utterance, window_size, delay)
 
-        prediction = np.vstack((prediction, temp[0]))
+        predictions = np.vstack((predictions, prediction))
         # to be able to separate predictions
-        prediction = np.vstack((prediction, np.array([3, 3, 3])))
+        predictions = np.vstack((predictions, np.array([3, 3, 3])))
 
-        phoneme_ground_truth = np.hstack((phoneme_ground_truth, temp[1]))
+        phoneme_ground_truth = np.hstack(
+            (phoneme_ground_truth, phoneme_ground_truth))
         # to be able to separate utterances
         phoneme_ground_truth = np.hstack(
             (phoneme_ground_truth, np.array(['nua'])))
         break
 
-    prediction = prediction[:-1]
+    predictions = predictions[:-1]
     phoneme_ground_truth = phoneme_ground_truth[:-1]
-    np.save(output_dir / 'prediction', prediction)
+    np.save(output_dir / 'prediction', predictions)
     np.save(output_dir / 'phonemegroundtruth', phoneme_ground_truth)
 
-    return prediction, phoneme_ground_truth
+    return predictions, phoneme_ground_truth
