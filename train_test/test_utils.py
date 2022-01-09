@@ -4,47 +4,60 @@ from sklearn.metrics import classification_report
 import numpy as np
 from soundfile import read
 
-from train_test.train_utils import phoneme_level_label
+from train_utils import phoneme_level_label
 from keras.models import load_model
 
-from train_test.lists import (fricative_list, silence_list,
-                              unvoiced_fricative_list, voiced_fricative_list)
+from lists import fricative_list, silence_list, unvoiced_fricative_list, voiced_fricative_list
 
-def calculate_performance(input_size_model, delay_model, experiment_folder):
 
-    prediction = np.load(os.path.join(
-        experiment_folder, 'results', 'prediction.npy'))
-
-    ground_truth = np.load(os.path.join(
-        experiment_folder, 'results', 'phonemegroundtruth.npy'))
+def calculate_performance(experiment_folder, prediction, ground_truth):
 
     nua = np.where(ground_truth == 'nua')[0]
+    print(nua)
 
     ground_truth = np.delete(ground_truth, nua)
     prediction = np.delete(prediction, nua, axis=0)
+    print(f"ground_truth {ground_truth}")
+    print(f"prediction {prediction}")
 
     ground_truth_binary = np.isin(ground_truth, fricative_list).astype(int)
 
+    print(f"ground_truth_binary {ground_truth_binary}")
     total_prediction_binary = np.argmax(prediction, axis=1)
     total_prediction_binary_ = total_prediction_binary == 1
+    print(f"total_prediction_binary {total_prediction_binary}")
+    print(f"total_prediction_binary_ {total_prediction_binary_}")
 
-    with open(os.path.join(experiment_folder, 'performance.txt'), 'w') as f:
-        f.writelines(classification_report(ground_truth_binary, total_prediction_binary_,
-                     target_names=['non-fricative', 'fricative'], digits=4))
+    with open(experiment_folder / 'performance.txt', 'w') as f:
+        f.writelines(
+            classification_report(
+                ground_truth_binary,
+                total_prediction_binary_,
+                target_names=['non-fricative', 'fricative'],
+                digits=4,
+            ))
 
-    calculate_performance_to_compare_state_of_the_art(experiment_folder, ground_truth, total_prediction_binary_)
+    calculate_performance_to_compare_state_of_the_art(
+        experiment_folder, ground_truth, total_prediction_binary_)
 
-def calculate_performance_to_compare_state_of_the_art(experiment_folder, ground_truth_phoneme_level, binary_prediction):
 
-    masked_voiced_fricatives = np.where(np.isin(ground_truth_phoneme_level,voiced_fricative_list)==True)[0]
+def calculate_performance_to_compare_state_of_the_art(
+        experiment_folder, ground_truth_phoneme_level, binary_prediction):
 
-    ground_truth_phoneme_level = np.delete(ground_truth_phoneme_level, masked_voiced_fricatives)
+    masked_voiced_fricatives = np.where(
+        np.isin(ground_truth_phoneme_level, voiced_fricative_list) == True)[0]
+
+    ground_truth_phoneme_level = np.delete(ground_truth_phoneme_level,
+                                           masked_voiced_fricatives)
 
     binary_prediction = np.delete(binary_prediction, masked_voiced_fricatives)
 
-    borders = np.where((ground_truth_phoneme_level[:-1] != ground_truth_phoneme_level[1:])==True)[0]
+    borders = np.where(
+        (ground_truth_phoneme_level[:-1] != ground_truth_phoneme_level[1:]
+         ) == True)[0]
 
-    borders = np.hstack((borders, np.array([ground_truth_phoneme_level.shape[0]-1])))
+    borders = np.hstack(
+        (borders, np.array([ground_truth_phoneme_level.shape[0] - 1])))
 
     mv_gt = []
     mv_pre = []
@@ -54,20 +67,25 @@ def calculate_performance_to_compare_state_of_the_art(experiment_folder, ground_
             start = 0
             end = border
         else:
-            start = borders[i-1]+1
+            start = borders[i - 1] + 1
             end = border
-            
+
         mv_gt.append(ground_truth_phoneme_level[border])
-        mv_pre.append(np.argmax(np.bincount(binary_prediction[start:end+1])))
+        mv_pre.append(np.argmax(np.bincount(binary_prediction[start:end + 1])))
 
     mv_gt = np.array(mv_gt)
     mv_pre = np.array(mv_pre)
 
-    mv_gt_binary = np.isin(mv_gt, unvoiced_fricative_list)*1
+    mv_gt_binary = np.isin(mv_gt, unvoiced_fricative_list) * 1
 
-    with open(os.path.join(experiment_folder, 'performance_to_compare_state_of_the_art.txt'), 'w') as f:
-        f.writelines(classification_report(mv_gt_binary, mv_pre,
-                     target_names=['non-fricative', 'fricative'], digits=4))
+    with open(
+            experiment_folder / 'performance_to_compare_state_of_the_art.txt',
+            'w') as f:
+        f.writelines(
+            classification_report(mv_gt_binary,
+                                  mv_pre,
+                                  target_names=['non-fricative', 'fricative'],
+                                  digits=4))
 
 
 def prediction_one_utterance(model, utterance_path, window_size, delay=0):
@@ -85,13 +103,46 @@ def prediction_one_utterance(model, utterance_path, window_size, delay=0):
         neuron at the end, takes values between [0,1])
         phoneme_ground_truth (numpy array): Ground truth for the corresponding utterance in phoneme label
     """
-    loaded_utterance = read(utterance_path)[0]
-    len_utterance = len(loaded_utterance)
+
+    loaded_utterance, input_to_prediction = process_audio(
+        utterance_path,
+        delay,
+        window_size,
+    )
     phoneme_ground_truth = phoneme_level_label(
-        np.genfromtxt(utterance_path[:-4] + ".PHN", dtype=[('myint', 'i4'), ('myint2', 'i4'), ('mystring', 'U25')],
-                      comments='*'), loaded_utterance)
+        np.genfromtxt(str(utterance_path)[:-4] + ".PHN",
+                      dtype=[
+                          ('myint', 'i4'),
+                          ('myint2', 'i4'),
+                          ('mystring', 'U25'),
+                      ],
+                      comments='*'),
+        loaded_utterance,
+    )
+
+    print(f"phoneme_ground_truth {len(phoneme_ground_truth)}")
+
+    len_utterance = len(loaded_utterance)
+    print(
+        f"len_utterance {len_utterance} / {window_size} = {len_utterance/window_size}"
+    )
+    print(f"input_to_prediction {input_to_prediction.shape}")
+    prediction = model.predict(input_to_prediction, batch_size=32).squeeze()
+    print(f"prediction {prediction.shape}")
+    #input()
+
+    assert len(prediction) == len(
+        phoneme_ground_truth
+    ), 'Prediction and ground truth have different lengths!'
+
+    return prediction, phoneme_ground_truth
+
+
+def process_audio(utterance_path, delay, window_size):
+    loaded_utterance = read(utterance_path)[0]
 
     input_to_prediction = []
+    len_utterance = len(loaded_utterance)
 
     for i in range(len_utterance):  # in each sample prediction
 
@@ -102,37 +153,36 @@ def prediction_one_utterance(model, utterance_path, window_size, delay=0):
             temp_sample = temp_sample[0:i + delay + 1]
 
             temp_sample = np.hstack(
-                (np.zeros(window_size-len(temp_sample)), temp_sample))
+                (np.zeros(window_size - len(temp_sample)), temp_sample))
 
         elif i + delay > len_utterance - 1:
 
-            temp_sample = temp_sample[i + delay +
-                                      1 - window_size:len_utterance]
+            temp_sample = temp_sample[i + delay + 1 -
+                                      window_size:len_utterance]
 
             temp_sample = np.hstack(
-                (temp_sample, np.zeros(window_size-len(temp_sample))))
+                (temp_sample, np.zeros(window_size - len(temp_sample))))
 
         else:
-            temp_sample = temp_sample[i + delay +
-                                      1 - window_size:i + delay + 1]
+            temp_sample = temp_sample[i + delay + 1 - window_size:i + delay +
+                                      1]
 
-        assert len(
-            temp_sample) == window_size, 'Data generation is wrong for testing!'
+        assert len(temp_sample
+                   ) == window_size, 'Data generation is wrong for testing!'
 
         input_to_prediction.append(
-            (temp_sample / np.std(temp_sample, axis=0)).reshape(window_size, 1))
+            (temp_sample / (np.std(temp_sample, axis=0) + 0.0000001)).reshape(
+                window_size, 1))
 
     input_to_prediction = np.array(input_to_prediction)
-
-    prediction = model.predict(input_to_prediction, batch_size=32).squeeze()
-
-    assert len(prediction) == len(
-        phoneme_ground_truth), 'Prediction and ground truth have different lengths!'
-
-    return prediction, phoneme_ground_truth
+    return loaded_utterance, input_to_prediction
 
 
-def prediction_whole_core_test(dir_to_save, test_audio_list, model_path, window_size, delay=0):
+def prediction_whole_core_test(output_dir,
+                               test_audio_list,
+                               model_path,
+                               window_size,
+                               delay=0):
     """Generates the output of a trained model for all utterances in the core test set of the TIMIT Dataset
 
     #Arguments
@@ -155,13 +205,11 @@ def prediction_whole_core_test(dir_to_save, test_audio_list, model_path, window_
             phoneme code ground truth of each utterance
 
     """
+    output_dir = output_dir / 'results'
 
-    dir_to_save = '{}/results'.format( 
-        dir_to_save)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    if not os.path.exists(dir_to_save):
-        os.makedirs(dir_to_save)
-
+    print(model_path)
     model = load_model(model_path)
 
     prediction = np.array([]).reshape(0, 3)
@@ -170,10 +218,11 @@ def prediction_whole_core_test(dir_to_save, test_audio_list, model_path, window_
     # Testing for each utterance in the Core Test Set
     for i, utterance in enumerate(test_audio_list):
 
+        print(f"utterance {utterance}")
+
         print('evaluating {} for utterance {}'.format(model_path, i + 1))
 
-        temp = prediction_one_utterance(
-            model, utterance, window_size, delay)
+        temp = prediction_one_utterance(model, utterance, window_size, delay)
 
         prediction = np.vstack((prediction, temp[0]))
         # to be able to separate predictions
@@ -183,8 +232,11 @@ def prediction_whole_core_test(dir_to_save, test_audio_list, model_path, window_
         # to be able to separate utterances
         phoneme_ground_truth = np.hstack(
             (phoneme_ground_truth, np.array(['nua'])))
+        break
 
     prediction = prediction[:-1]
     phoneme_ground_truth = phoneme_ground_truth[:-1]
-    np.save(os.path.join(dir_to_save, 'prediction'), prediction)
-    np.save(os.path.join(dir_to_save, 'phonemegroundtruth'), phoneme_ground_truth)
+    np.save(output_dir / 'prediction', prediction)
+    np.save(output_dir / 'phonemegroundtruth', phoneme_ground_truth)
+
+    return prediction, phoneme_ground_truth

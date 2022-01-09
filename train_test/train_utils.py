@@ -8,9 +8,7 @@ import numpy as np
 from keras.models import load_model
 from soundfile import read
 
-
-from train_test.lists import (fricative_list, silence_list,
-                              unvoiced_fricative_list, voiced_fricative_list)
+from lists import fricative_list, silence_list, unvoiced_fricative_list, voiced_fricative_list
 
 
 def windowing(audio, label, ws, flag, delay):
@@ -19,14 +17,10 @@ def windowing(audio, label, ws, flag, delay):
 
     #Arguments
         audio (numpy array): Numpy array that contains the wav file of the utterance
-        label (numpy array): Numpy array that contains the label file for the corresponding utterance in binary,
-        0 means non-fricative, 1 means fricative sample
+        label (numpy array): Numpy array that contains the label file for the corresponding utterance in binary, 0 means non-fricative, 1 means fricative sample
         ws (int): Size of the extracted sample in samples
-        flag (int): Flag for sample generation, if it is 1, then a fricative sample is generated, and if it is 0,
-        non-fricative sample is generated
-        delay(int) (in samples): Decides the prediction and also labeling point of the extracted label. If it is 0, then
-        prediction and labeling point is the last index of the extracted sample
-        if it is a positive value, then the prediction and labeling point is in the left side of the last index of the
+        flag (int): Flag for sample generation, if it is 1, then a fricative sample is generated, and if it is 0, non-fricative sample is generated
+        delay(int) (in samples): Decides the prediction and also labeling point of the extracted label. If it is 0, then prediction and labeling point is the last index of the extracted sample, if it is a positive value, then the prediction and labeling point is in the left side of the last index of the
         extracted sample, meaning prediction and labeling use future samples,
         finally if it is a negative value, then the prediction and labeling point is in the right side of the last index
         of the extracted sample,
@@ -43,13 +37,16 @@ def windowing(audio, label, ws, flag, delay):
         try:  # some utterances in the TIMIT dataset do not have fricative phoneme at all. To avoid this issue,
             # this error handling is applied
             label_point = np.random.choice(
-                np.where(label[ws - 1 - delay:len(audio) - np.max([0, delay])] == 1)[0]) + ws - 1 - delay
+                np.where(
+                    label[ws - 1 - delay:len(audio) -
+                          np.max([0, delay])] == flag)[0]) + ws - 1 - delay
         except ValueError:  # some of the utterances does not have a single fricative
-            label_point = np.random.randint(
-                ws - 1 - delay, len(audio) - np.max([0, delay]))
+            label_point = np.random.randint(ws - 1 - delay,
+                                            len(audio) - np.max([0, delay]))
     else:  # non-fricative sample generation
         label_point = np.random.choice(
-            np.where(label[ws - 1 - delay:len(audio) - np.max([0, delay])] == flag)[0]) + ws - 1 - delay
+            np.where(label[ws - 1 - delay:len(audio) -
+                           np.max([0, delay])] == flag)[0]) + ws - 1 - delay
 
     sample = audio[label_point - ws + 1 + delay:label_point + 1 + delay]
 
@@ -70,7 +67,8 @@ def binary_label(data_phn, data):
             corresponding wav file of the utterance (data) and indicates the label for each sample in the utterance. It
             contains 0's (non-fricative) and 1's (for fricative)
     """
-    data_phn[0][0] = 0  # some silence parts do not start at 0 index in the TIMIT dataset
+    data_phn[0][
+        0] = 0  # some silence parts do not start at 0 index in the TIMIT dataset
     data_phn[-1][1] = len(
         data)  # in some phn files, end index of the last phoneme does not
     # have the same length with the corresponding utterance
@@ -88,7 +86,8 @@ def binary_label(data_phn, data):
     return label_array
 
 
-def phoneme_level_label(data_phn, data):  # change the name later to phoneme level
+# change the name later to phoneme level
+def phoneme_level_label(data_phn, data):
     """Function for creating a label file for an utterance using its PHN file for multi-class training
 
     #Arguments
@@ -99,9 +98,10 @@ def phoneme_level_label(data_phn, data):  # change the name later to phoneme lev
         sample in time. It has same length with the
             corresponding wav file of the utterance (data)
     """
-    data_phn[0][0] = 0  # some silence parts do not start at 0 index in the TIMIT dataset
-    data_phn[-1][1] = len(
-        data)  # in some phn files, end index of the last phoneme
+    data_phn[0][0] = 0
+    # some silence parts do not start at 0 index in the TIMIT dataset
+    data_phn[-1][1] = len(data)
+    # in some phn files, end index of the last phoneme
     # does not have the same length with the corresponding utterance
     label_array = np.chararray((len(data)), itemsize=5, unicode=True)
 
@@ -113,16 +113,16 @@ def phoneme_level_label(data_phn, data):  # change the name later to phoneme lev
 
 class DataGenerator(keras.utils.Sequence):
     """Generates data for Keras"""
-
-    def __init__(self,
-                 list_paths,
-                 batch_size,
-                 noa,
-                 window_size,
-                 delay,
-                 use_case,
-                 shuffle=True,
-                 ):
+    def __init__(
+        self,
+        list_paths,
+        batch_size,
+        noa,
+        window_size,
+        delay,
+        use_case,
+        shuffle=True,
+    ):
         """Initialization"""
         self.batch_size = batch_size  # number of samples per batch
         self.noa = noa  # number of utterance per batch
@@ -178,31 +178,38 @@ class DataGenerator(keras.utils.Sequence):
             # Store samples and labels
             temp_sample = read(temp_path)[0]
             raw_samples.append(temp_sample)
-            temp_label = binary_label(np.genfromtxt(temp_path[:-4] + '.PHN',
-                                                    dtype=[('myint', 'i4'), ('myint2', 'i4'),
-                                                           ('mystring', 'U25')], comments='*'), temp_sample)
+            temp_label = binary_label(
+                np.genfromtxt(
+                    temp_path[:-4] + '.PHN',
+                    dtype=[('myint', 'i4'), ('myint2', 'i4'),
+                           ('mystring', 'U25')],
+                    comments='*',
+                ), )
             raw_labels.append(temp_label)
 
         # Initialization
         x = np.zeros((len(list_paths_batch) * self.nos, self.window_size))
-        
+
         y = np.zeros((len(list_paths_batch) * self.nos, 3))
 
         # Create Samples and Labels from loaded raw samples and raw labels
 
         for _ in range(self.nos):
-             
+
             desired_label = self.flag % 3
             for k in range(len(list_paths_batch)):
-                single_temp_sample, single_temp_label = windowing(raw_samples[k], raw_labels[k], self.window_size,
-                                                                  desired_label, self.delay)
-                
-                single_temp_label_np = np.array([0, 0, 0])
-                single_temp_label_np[int(single_temp_label)] = 1
-                y[count] = single_temp_label_np
+                single_temp_sample, single_temp_label = windowing(
+                    raw_samples[k],
+                    raw_labels[k],
+                    self.window_size,
+                    desired_label,
+                    self.delay,
+                )
 
-                single_temp_sample = single_temp_sample / \
-                    np.std(single_temp_sample, axis=0)
+                y[count][int(single_temp_label)] = 1
+
+                single_temp_sample = single_temp_sample / np.std(
+                    single_temp_sample, axis=0)
                 x[count] = single_temp_sample
                 count += 1
             self.flag += 1

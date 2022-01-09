@@ -1,5 +1,4 @@
 import datetime
-import os
 import sys
 import time
 from argparse import ArgumentParser
@@ -8,21 +7,21 @@ from contextlib import redirect_stdout
 import numpy as np
 import tensorflow as tf
 from keras import backend as K
-from keras.callbacks import (EarlyStopping, History, ModelCheckpoint,
-                             ReduceLROnPlateau, TensorBoard)
+from keras.callbacks import EarlyStopping, History, ModelCheckpoint, ReduceLROnPlateau, TensorBoard
 
 from keras.optimizers import Adam
 
+from helpers import sorted_alphanumeric
+from lists import core_test_set_speakers, fricative_list, val_audio_list
+from model import FriDNN
+from test_utils import prediction_whole_core_test, calculate_performance
+from train_utils import DataGenerator
 
-from train_test.helpers import sorted_alphanumeric
-from train_test.lists import core_test_set_speakers, fricative_list, val_audio_list
-from train_test.model import FriDNN
-from train_test.test_utils import prediction_whole_core_test, calculate_performance
-from train_test.train_utils import DataGenerator
+from pathlib import Path
 
-config = tf.compat.v1.ConfigProto()
-config.gpu_options.allow_growth = True
-session = tf.Session(config=config)
+#config = tf.compat.v1.ConfigProto()
+#config.gpu_options.allow_growth = True
+#session = tf.compat.v1.Session(config=config)
 
 # training parameters
 
@@ -32,159 +31,173 @@ EPOCHS = 1000
 WINDOW_SIZE = 320  # input size of the network
 
 
-def train_and_test_model(path_to_TIMIT, pre_delay, target_dir, only_test):
+def train_and_test_model(path_to_TIMIT, pre_delay, model_dir, output_dir,
+                         only_test):
 
     # creating relatives paths for test data set, validation data set and train data set
     test_audio_list = []
-    for dialect in os.listdir(os.path.join(path_to_TIMIT, "TIMIT/TEST/")):
-        for person in os.listdir(os.path.join(path_to_TIMIT, "TIMIT/TEST", dialect)):
-            if person in core_test_set_speakers:
-                temp_list = os.listdir(os.path.join(
-                    path_to_TIMIT, "TIMIT/TEST", dialect, person))
-                temp_list = [x for x in temp_list if x[-3:]
-                             == 'WAV' and 'SA' not in x]
-                for sentence in temp_list:
-                    test_audio_list.append(os.path.join(
-                        path_to_TIMIT, "TIMIT/TEST", dialect, person, sentence))
+    test_dir = path_to_TIMIT / "TIMIT" / "TEST"
+    for dialect in test_dir.iterdir():
+        for person in dialect.iterdir():
+            if person.name in core_test_set_speakers:
+                temp_list = person.iterdir()
 
-    val_audio_full_paths = [os.path.join(
-        path_to_TIMIT, "TIMIT/TEST", item) for item in val_audio_list]
+                temp_list = [
+                    x for x in temp_list
+                    if x.name.endswith('WAV') and ('SA' not in x.name)
+                ]
+                for sentence in temp_list:
+                    test_audio_list.append(sentence)
+
+    val_audio_full_paths = [test_dir / item for item in val_audio_list]
 
     train_audio_list = []
-    for dialect in os.listdir(os.path.join(path_to_TIMIT, "TIMIT/TRAIN")):
-        for person in os.listdir(os.path.join(path_to_TIMIT, "TIMIT/TRAIN", dialect)):
-            temp_list = os.listdir(os.path.join(
-                path_to_TIMIT, "TIMIT/TRAIN", dialect, person))
-            temp_list = [x for x in temp_list if x[-3:]
-                         == 'WAV' and 'SA' not in x]
+    train_dir = path_to_TIMIT / "TIMIT" / "TRAIN"
+    for dialect in train_dir.iterdir():
+        for person in dialect.iterdir():
+            temp_list = person.iterdir()
+            temp_list = [
+                x for x in temp_list
+                if x.name.endswith('WAV') and ('SA' not in x.name)
+            ]
+
             for sentence in temp_list:
-                train_audio_list.append(os.path.join(
-                    path_to_TIMIT, "TIMIT/TRAIN", dialect, person, sentence))
+                train_audio_list.append(sentence)
 
     assert WINDOW_SIZE / pre_delay == 2, "Window size and prediction delay are set wrong!"
 
+    ck_dir = model_dir / 'checkpoints'
+    ck_dir.mkdir(parents=True, exist_ok=True)
+
     if not only_test:
 
-        os.makedirs(target_dir, exist_ok=False)
+        model_dir.mkdir(parents=True, exist_ok=False)
 
         # Network Creation
-        name = "{}-{}-{}".format(os.path.basename(target_dir), pre_delay,
-                                 datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S"))
+        name = f"{model_dir.name}-{pre_delay}-{datetime.datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}"
 
         model = FriDNN(input_size=WINDOW_SIZE)
 
         model.summary()
 
         model.compile(optimizer='Adam',
-                      loss='categorical_crossentropy', metrics=['accuracy'])
+                      loss='categorical_crossentropy',
+                      metrics=['accuracy'])
 
-        with open(os.path.join(target_dir, name + '_summary.txt'), 'w') as f:
+        with open(model_dir / f"{name}_summary.txt", 'w') as f:
             with redirect_stdout(f):
                 model.summary()
+        log_dir = model_dir / 'logs'
+        train_dir.mkdir(parents=True, exist_ok=False)
 
-        os.makedirs(os.path.join(target_dir, 'logs'))
+        tensorboard = TensorBoard(log_dir=train_dir)
+        es = EarlyStopping(monitor='val_loss',
+                           min_delta=0,
+                           mode='min',
+                           verbose=2,
+                           patience=40)
 
-        tensorboard = TensorBoard(log_dir=os.path.join(target_dir, 'logs'))
-        es = EarlyStopping(monitor='val_loss', min_delta=0,
-                           mode='min', verbose=2, patience=40)
+        lr = ReduceLROnPlateau(monitor='val_loss',
+                               factor=0.5,
+                               patience=10,
+                               verbose=1,
+                               mode='auto',
+                               cooldown=0,
+                               min_lr=0)
 
-        lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5,
-                               patience=10, verbose=1, mode='auto', cooldown=0, min_lr=0)
+        filepath = ck_dir / "{name}_epoch_{epoch:02d}_valloss_{val_loss:.3f}.hdf5"
 
-        os.makedirs(os.path.join(target_dir, 'checkpoints'))
-
-        filepath = os.path.join(target_dir, 'checkpoints', name +
-                                "_" + "epoch_{epoch:02d}_valloss_{val_loss:.3f}.hdf5")
-
-        mc1 = ModelCheckpoint(filepath, monitor='val_loss', verbose=1, save_best_only=True, save_weights_only=False,
-                              mode='auto', period=1)
+        mc1 = ModelCheckpoint(str(filepath),
+                              monitor='val_loss',
+                              verbose=1,
+                              save_best_only=True,
+                              save_weights_only=False,
+                              mode='auto',
+                              period=1)
 
         # Initialization of data generators for training and validation
-        train_gen = DataGenerator(train_audio_list,
-                                      BATCH_SIZE,
-                                      NUMBER_OF_AUDIOS,
-                                      WINDOW_SIZE,
-                                      pre_delay,
-                                      'training')
+        train_gen = DataGenerator(train_audio_list, BATCH_SIZE,
+                                  NUMBER_OF_AUDIOS, WINDOW_SIZE, pre_delay,
+                                  'training')
 
-        val_gen = DataGenerator(val_audio_full_paths,
-                                    BATCH_SIZE,
-                                    NUMBER_OF_AUDIOS,
-                                    WINDOW_SIZE,
-                                    pre_delay,
-                                    'validation')
+        val_gen = DataGenerator(val_audio_full_paths, BATCH_SIZE,
+                                NUMBER_OF_AUDIOS, WINDOW_SIZE, pre_delay,
+                                'validation')
 
-        hist = model.fit_generator(train_gen, epochs=EPOCHS, verbose=1,
+        hist = model.fit_generator(train_gen,
+                                   epochs=EPOCHS,
+                                   verbose=1,
                                    callbacks=[tensorboard, es, mc1, lr],
                                    validation_data=val_gen,
-                                   max_queue_size=4, workers=1, use_multiprocessing=False, shuffle=False, initial_epoch=0)
+                                   max_queue_size=4,
+                                   workers=1,
+                                   use_multiprocessing=False,
+                                   shuffle=False,
+                                   initial_epoch=0)
 
-    if only_test:
-
-        # testing the trained model
-        different_epoch_paths = os.listdir(
-            os.path.join(target_dir, 'checkpoints'))
-
-        different_epoch_paths = sorted_alphanumeric(different_epoch_paths)
-
-        last_checkpoint_path = os.path.join(
-            target_dir, 'checkpoints', different_epoch_paths[-1])
-
-    else:
-
-        # testing the trained model
-        different_epoch_paths = os.listdir(
-            os.path.join(target_dir, 'checkpoints'))
-
+    different_epoch_paths = ck_dir.iterdir()
+    if not only_test:
         different_epoch_paths = list(
-            filter(lambda x_: x_[-4:] == "hdf5" and x_.split('_epoch_')[0] == name.split('_epoch_')[0], different_epoch_paths))
+            filter(
+                lambda x_: x_.name[-4:] == "hdf5" and x_.name.split('_epoch_')[
+                    0] == name.split('_epoch_')[0], different_epoch_paths))
 
-        different_epoch_paths = sorted_alphanumeric(different_epoch_paths)
+    different_epoch_paths = sorted_alphanumeric(different_epoch_paths)
 
-        last_checkpoint_path = os.path.join(
-            target_dir, 'checkpoints', different_epoch_paths[-1])
+    last_checkpoint_path = different_epoch_paths[-1]
 
-    prediction_whole_core_test(target_dir,
-                               test_audio_list,
-                               last_checkpoint_path,
-                               WINDOW_SIZE,
-                               pre_delay)
+    prediction, phoneme_ground_truth = prediction_whole_core_test(
+        output_dir, test_audio_list, last_checkpoint_path, WINDOW_SIZE,
+        pre_delay)
 
-    calculate_performance(WINDOW_SIZE,
-                          pre_delay,
-                          target_dir)
+    calculate_performance(output_dir, prediction, phoneme_ground_truth)
 
 
 if __name__ == "__main__":
 
     parser = ArgumentParser()
 
-    parser.add_argument('-D', '--timit_directory',
+    parser.add_argument('--timit_directory',
                         type=str,
                         required=True,
                         help='Directory containing TIMIT dataset.',
                         metavar='<TimitDirectory>')
 
-    parser.add_argument('-d', '--delay',
+    parser.add_argument('--delay',
                         type=int,
                         help='Detection delay in samples',
                         metavar='<Delay>',
                         default=160)
 
-    parser.add_argument('-t', '--target_dir',
+    parser.add_argument('--model_dir',
                         type=str,
                         required=True,
                         help='Target directory for the experiment',
                         metavar='<TargetDirectory>')
-
+    parser.add_argument('--output_dir',
+                        type=str,
+                        required=True,
+                        help='Target directory for the experiment',
+                        metavar='<TargetDirectory>')
     parser.add_argument('--test_only',
                         default=False,
                         action='store_true',
                         help='Test already trained model')
 
-    args = parser.parse_args()
+    parser.add_argument(
+        '--job_id',
+        type=str,
+    )
 
-    train_and_test_model(args.timit_directory,
-                         args.delay,
-                         args.target_dir,
-                         args.test_only)
+    args = parser.parse_args()
+    args.timit_directory = Path(args.timit_directory)
+    args.model_dir = Path(args.model_dir)
+    args.output_dir = Path(args.output_dir) / args.job_id
+
+    train_and_test_model(
+        args.timit_directory,
+        args.delay,
+        args.model_dir,
+        args.output_dir,
+        args.test_only,
+    )
