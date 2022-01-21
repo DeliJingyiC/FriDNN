@@ -20,12 +20,7 @@ def windowing(audio, label, ws, flag, delay):
         label (numpy array): Numpy array that contains the label file for the corresponding utterance in binary, 0 means non-fricative, 1 means fricative sample
         ws (int): Size of the extracted sample in samples
         flag (int): Flag for sample generation, if it is 1, then a fricative sample is generated, and if it is 0, non-fricative sample is generated
-        delay(int) (in samples): Decides the prediction and also labeling point of the extracted label. If it is 0, then prediction and labeling point is the last index of the extracted sample, if it is a positive value, then the prediction and labeling point is in the left side of the last index of the
-        extracted sample, meaning prediction and labeling use future samples,
-        finally if it is a negative value, then the prediction and labeling point is in the right side of the last index
-        of the extracted sample,
-        meaning labeling uses future samples for labeling therefore prediction extrapolates the upcoming samples
-        during prediction.
+        delay(int) (in samples): Decides the prediction and also labeling point of the extracted label. If it is 0, then prediction and labeling point is the last index of the extracted sample, if it is a positive value, then the prediction and labeling point is in the left side of the last index of the extracted sample, meaning prediction and labeling use future samples, finally if it is a negative value, then the prediction and labeling point is in the right side of the last index of the extracted sample, meaning labeling uses future samples for labeling therefore prediction extrapolates the upcoming samples during prediction.
         spectral_tilt_array (numpy array): Spectral tilt array corresponding to the utterance (pre-calculated) 
     #Returns
         sample (numpy array): Numpy array that contains the extracted sample wav file
@@ -62,16 +57,16 @@ def binary_label(data_phn, data):
             corresponding wav file of the utterance (data) and indicates the label for each sample in the utterance. It
             contains 0's (non-fricative) and 1's (for fricative)
     """
-    data_phn[0][0] = 0
+    data_phn[0][0] = 0  #phn file utterance
     # some silence parts do not start at 0 index in the TIMIT dataset
     data_phn[-1][1] = len(data)
     # in some phn files, end index of the last phoneme does not have the same length with the corresponding utterance
     label_array = np.zeros((len(data)))
     NULL_INDEX = len(fricative_dict)
     for phoneme in data_phn:
-        if phoneme[2] in fricative_dict:
+        if phoneme[2] in fricative_dict:  #phoneme[2] get the phoneme label
             label_array[int(phoneme[0]):int(phoneme[1])] = fricative_dict[
-                phoneme[2]]
+                phoneme[2]]  #get the fricative's corresponding number label
         else:
             label_array[int(phoneme[0]):int(phoneme[1])] = NULL_INDEX
     """
@@ -83,7 +78,6 @@ def binary_label(data_phn, data):
 
     input()
     """
-
     return label_array
 
 
@@ -178,8 +172,8 @@ class DataGenerator(keras.utils.Sequence):
         raw_labels = []
         for i, temp_path in enumerate(list_paths_batch):
             # Store samples and labels
-            temp_sample = read(temp_path)[0]
-            raw_samples.append(temp_sample)
+            temp_sample = read(temp_path)[0]  #audio length
+            raw_samples.append(temp_sample)  #a list
             temp_label = binary_label(
                 np.genfromtxt(
                     str(temp_path)[:-4] + '.PHN',
@@ -220,5 +214,4 @@ class DataGenerator(keras.utils.Sequence):
             self.flag += 1
 
         x = np.expand_dims(x, axis=2)
-
         return x, y

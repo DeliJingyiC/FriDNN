@@ -1,10 +1,12 @@
 import datetime
 import sys
 import time
+import csv
 from argparse import ArgumentParser
 from contextlib import redirect_stdout
 
 import numpy as np
+import pandas as pd
 import tensorflow as tf
 from keras import backend as K
 from keras.callbacks import EarlyStopping, History, ModelCheckpoint, ReduceLROnPlateau, TensorBoard
@@ -13,17 +15,18 @@ from keras.optimizers import Adam
 from keras.models import load_model
 
 from helpers import sorted_alphanumeric
-from lists import core_test_set_speakers, fricative_list, val_audio_list
+from lists import core_test_set_speakers, fricative_list, val_audio_list, fricative_dict, fricative_dict_rev
 from model import FriDNN
 from test_utils import prediction_whole_core_test, calculate_performance
 from train_utils import DataGenerator
 
 from pathlib import Path
 
-from main import WINDOW_SIZE
 from test_utils import process_audio
 
 import matplotlib.pyplot as plt
+
+from tqdm import trange
 
 if __name__ == "__main__":
 
@@ -56,6 +59,9 @@ if __name__ == "__main__":
                         action='store_true',
                         help='Test already trained model')
 
+    parser.add_argument('--window_size',
+                        type=int,
+                        help='window size of the sounds')
     parser.add_argument(
         '--job_id',
         type=str,
@@ -78,33 +84,54 @@ if __name__ == "__main__":
     input_files = [
         f for f in args.audio_dir.iterdir() if (f.name.endswith("wav"))
     ]
+    s_output_dir = args.output_dir / f"s_output"
+    s_output_dir.mkdir(parents=True, exist_ok=True)
     figure_dir = args.output_dir / f"figure"
     figure_dir.mkdir(parents=True, exist_ok=True)
-    for i in range(len(input_files)):
+    name = []
+    carry_s = []
+    for i in trange(len(input_files)):
         audio_path = input_files[i]
         print(audio_path)
         loaded_utterance, input_to_prediction = process_audio(
             audio_path,
             args.delay,
-            WINDOW_SIZE,
+            args.window_size,
         )
         ind = np.arange(len(input_to_prediction))
-        prediction = model.predict(input_to_prediction,
-                                   batch_size=32).squeeze()
+        prediction = model.predict(input_to_prediction, batch_size=32)
+        prediction = prediction.squeeze()
 
         total_prediction_binary = np.argmax(prediction, axis=1)
-        total_prediction_binary_ = total_prediction_binary == 1
+        name.append(audio_path.name)
 
+        carry_s.append(
+            len(total_prediction_binary[total_prediction_binary == 0]))
+        """
         plt.figure()
-        plt.plot(
-            ind,
-            loaded_utterance,
-        )
-        plt.plot(ind[total_prediction_binary_],
-                 loaded_utterance[total_prediction_binary_],
-                 linestyle="",
-                 marker="*")
 
-        plt.savefig(figure_dir / f"{audio_path.name.replace('.wav', '.png')}")
+        for i in range(0, len(fricative_dict)):
+            plt.subplot(len(fricative_dict), 1, i + 1)
+
+            plt.plot(
+                ind,
+                loaded_utterance,
+            )
+            local_ind = total_prediction_binary == i
+            plt.plot(
+                ind[local_ind],
+                loaded_utterance[local_ind],
+                label=fricative_dict_rev[i],
+                linestyle="",
+                marker="*",
+            )
+            plt.legend()
+        plt.savefig(
+            figure_dir / f"{audio_path.name.replace('.wav', '.png')}",
+            dpi=600,
+        )
         plt.close()
-        #print(prediction.shape)
+        """
+    dataframe = pd.DataFrame({'soundfile': name, 's': carry_s})
+    dataframe.to_csv(s_output_dir / "s_output.csv", index=False, sep=',')
+    #print(prediction.shape)

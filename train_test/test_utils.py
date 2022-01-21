@@ -7,7 +7,7 @@ from soundfile import read
 from train_utils import phoneme_level_label
 from keras.models import load_model
 
-from lists import fricative_list, silence_list, unvoiced_fricative_list, voiced_fricative_list, fricative_dict
+from lists import fricative_list, silence_list, unvoiced_fricative_list, voiced_fricative_list, fricative_dict, fricative_dict_rev
 
 
 def calculate_performance(experiment_folder, prediction, ground_truth):
@@ -17,11 +17,14 @@ def calculate_performance(experiment_folder, prediction, ground_truth):
 
     ground_truth = np.delete(ground_truth, nua)
     prediction = np.delete(prediction, nua, axis=0)
-    print(f"ground_truth {ground_truth}")
-    print(f"prediction {prediction}")
+    print(f"ground_truth {ground_truth.shape}")
+    print(f"prediction {prediction.shape}")
+
+    actual_keys = np.zeros_like(ground_truth,
+                                dtype=np.int64) + len(fricative_dict)
 
     for key, val in fricative_dict.items():
-        ground_truth[ground_truth == key] = val
+        actual_keys[ground_truth == key] = val
 
     #ground_truth_binary = np.isin(ground_truth, fricative_list).astype(int)
 
@@ -29,20 +32,28 @@ def calculate_performance(experiment_folder, prediction, ground_truth):
     total_prediction_binary = np.argmax(prediction, axis=1)
     #total_prediction_binary_ = total_prediction_binary == 1
     print(f"total_prediction_binary {total_prediction_binary}")
-    print(f"total_prediction_binary_ {total_prediction_binary_}")
+    #print(f"total_prediction_binary_ {total_prediction_binary_}")
+    labels = [i for i in range(len(fricative_dict_rev) + 1)]
+    target_names = [
+        fricative_dict_rev[i] for i in range(len(fricative_dict_rev))
+    ] + ["else"]
 
+    print(f"labels {labels}")
+    print(f"target_names {target_names}")
     with open(experiment_folder / 'performance.txt', 'w') as f:
         f.writelines(
             classification_report(
+                actual_keys,
                 total_prediction_binary,
-                ground_truth,
-                target_names=['non-fricative', 'fricative'],
+                labels=labels,
+                target_names=target_names,
                 digits=4,
             ))
-
+    """
     calculate_performance_to_compare_state_of_the_art(experiment_folder,
-                                                      ground_truth,
+                                                      actual_keys,
                                                       total_prediction_binary)
+    """
 
 
 def calculate_performance_to_compare_state_of_the_art(
@@ -134,6 +145,7 @@ def prediction_one_utterance(model, utterance_path, window_size, delay=0):
     prediction = model.predict(input_to_prediction, batch_size=32).squeeze()
     print(f"prediction {prediction.shape}")
     #input()
+    print(f"phoneme_ground_truth {phoneme_ground_truth.shape}")
 
     assert len(prediction) == len(
         phoneme_ground_truth
@@ -216,8 +228,8 @@ def prediction_whole_core_test(output_dir,
     print(model_path)
     model = load_model(model_path)
 
-    predictions = np.array([]).reshape(0, 3)
-    phoneme_ground_truth = np.array([])
+    predictions = np.array([]).reshape(0, 9)
+    phoneme_ground_truths = np.array([])
 
     # Testing for each utterance in the Core Test Set
     for i, utterance in enumerate(test_audio_list):
@@ -231,18 +243,21 @@ def prediction_whole_core_test(output_dir,
 
         predictions = np.vstack((predictions, prediction))
         # to be able to separate predictions
-        predictions = np.vstack((predictions, np.array([3, 3, 3])))
+        predictions = np.vstack((predictions, np.array([9] * 9)))
 
-        phoneme_ground_truth = np.hstack(
-            (phoneme_ground_truth, phoneme_ground_truth))
+        phoneme_ground_truths = np.hstack(
+            (phoneme_ground_truths, phoneme_ground_truth))
         # to be able to separate utterances
-        phoneme_ground_truth = np.hstack(
-            (phoneme_ground_truth, np.array(['nua'])))
+        phoneme_ground_truths = np.hstack(
+            (phoneme_ground_truths, np.array(['nua'])))
         break
 
     predictions = predictions[:-1]
-    phoneme_ground_truth = phoneme_ground_truth[:-1]
+    phoneme_ground_truths = phoneme_ground_truths[:-1]
     np.save(output_dir / 'prediction', predictions)
-    np.save(output_dir / 'phonemegroundtruth', phoneme_ground_truth)
+    np.save(output_dir / 'phonemegroundtruth', phoneme_ground_truths)
 
-    return predictions, phoneme_ground_truth
+    print(f"predictions {predictions.shape}")
+    #input()
+    print(f"phoneme_ground_truths {phoneme_ground_truths.shape}")
+    return predictions, phoneme_ground_truths

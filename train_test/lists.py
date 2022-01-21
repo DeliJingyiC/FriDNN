@@ -17,6 +17,8 @@ fricative_dict = {
     'v': 6,
     'dh': 7,
 }
+
+fricative_dict_rev = {val: key for key, val in fricative_dict.items()}
 # phonemes considered as silence
 silence_list = ['h#', 'epi', 'pau', 'bcl', 'dcl', 'gcl', 'pcl', 'tcl', 'kcl']
 

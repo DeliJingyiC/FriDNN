@@ -28,11 +28,11 @@ from pathlib import Path
 BATCH_SIZE = 256  # bath size
 NUMBER_OF_AUDIOS = 16  # number of utterance selected for a single batch
 EPOCHS = 1000
-WINDOW_SIZE = 320  # input size of the network
+#WINDOW_SIZE = 320  # input size of the network
 
 
 def train_and_test_model(path_to_TIMIT, pre_delay, model_dir, output_dir,
-                         only_test):
+                         only_test, window_size):
 
     # creating relatives paths for test data set, validation data set and train data set
     test_audio_list = []
@@ -64,7 +64,7 @@ def train_and_test_model(path_to_TIMIT, pre_delay, model_dir, output_dir,
             for sentence in temp_list:
                 train_audio_list.append(sentence)
 
-    assert WINDOW_SIZE / pre_delay == 2, "Window size and prediction delay are set wrong!"
+    assert window_size / pre_delay == 2, "Window size and prediction delay are set wrong!"
 
     ck_dir = model_dir / 'checkpoints'
     ck_dir.mkdir(parents=True, exist_ok=True)
@@ -76,7 +76,7 @@ def train_and_test_model(path_to_TIMIT, pre_delay, model_dir, output_dir,
         # Network Creation
         name = f"{model_dir.name}-{pre_delay}-{datetime.datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}"
 
-        model = FriDNN(input_size=WINDOW_SIZE)
+        model = FriDNN(input_size=window_size)
 
         model.summary()
 
@@ -119,11 +119,11 @@ def train_and_test_model(path_to_TIMIT, pre_delay, model_dir, output_dir,
 
         # Initialization of data generators for training and validation
         train_gen = DataGenerator(train_audio_list, BATCH_SIZE,
-                                  NUMBER_OF_AUDIOS, WINDOW_SIZE, pre_delay,
+                                  NUMBER_OF_AUDIOS, window_size, pre_delay,
                                   'training')
 
         val_gen = DataGenerator(val_audio_full_paths, BATCH_SIZE,
-                                NUMBER_OF_AUDIOS, WINDOW_SIZE, pre_delay,
+                                NUMBER_OF_AUDIOS, window_size, pre_delay,
                                 'validation')
 
         hist = model.fit_generator(
@@ -140,18 +140,13 @@ def train_and_test_model(path_to_TIMIT, pre_delay, model_dir, output_dir,
         )
 
     different_epoch_paths = ck_dir.iterdir()
-    if not only_test:
-        different_epoch_paths = list(
-            filter(
-                lambda x_: x_.name[-4:] == "hdf5" and x_.name.split('_epoch_')[
-                    0] == name.split('_epoch_')[0], different_epoch_paths))
 
     different_epoch_paths = sorted_alphanumeric(different_epoch_paths)
 
     last_checkpoint_path = different_epoch_paths[-1]
 
     prediction, phoneme_ground_truth = prediction_whole_core_test(
-        output_dir, test_audio_list, last_checkpoint_path, WINDOW_SIZE,
+        output_dir, test_audio_list, last_checkpoint_path, window_size,
         pre_delay)
 
     calculate_performance(output_dir, prediction, phoneme_ground_truth)
@@ -188,6 +183,10 @@ if __name__ == "__main__":
                         action='store_true',
                         help='Test already trained model')
 
+    parser.add_argument('--window_size',
+                        type=int,
+                        help='Window size of the sounds')
+
     parser.add_argument(
         '--job_id',
         type=str,
@@ -198,10 +197,13 @@ if __name__ == "__main__":
     args.model_dir = Path(args.model_dir)
     args.output_dir = Path(args.output_dir) / args.job_id
 
+    for key, val in args.__dict__.items():
+        print(f"{key}={val}")
     train_and_test_model(
         args.timit_directory,
         args.delay,
         args.model_dir,
         args.output_dir,
         args.test_only,
+        args.window_size,
     )
